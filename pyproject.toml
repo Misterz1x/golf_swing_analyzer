@@ -1,0 +1,22 @@
+[project]
+name = "golf-swing-analyzer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ultralytics>=8.4.48",
+    "torch",
+    "torchvision",
+]
+
+# Redirect torch/torchvision to the PyTorch CUDA 12.8 index so uv installs
+# the GPU build instead of the CPU-only build from PyPI.
+[tool.uv.sources]
+torch = { index = "pytorch-cuda" }
+torchvision = { index = "pytorch-cuda" }
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
