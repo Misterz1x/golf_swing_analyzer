@@ -8,6 +8,7 @@ dependencies = [
     "ultralytics>=8.4.48",
     "torch",
     "torchvision",
+    "scipy>=1.17.1",
 ]
 
 # Redirect torch/torchvision to the PyTorch CUDA 12.8 index so uv installs

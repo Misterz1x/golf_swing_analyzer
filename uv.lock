@@ -297,6 +297,7 @@ name = "golf-swing-analyzer"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "scipy" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "ultralytics" },
@@ -304,6 +305,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "scipy", specifier = ">=1.17.1" },
     { name = "torch", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchvision", index = "https://download.pytorch.org/whl/cu128" },
     { name = "ultralytics", specifier = ">=8.4.48" },
