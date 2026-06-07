@@ -18,7 +18,7 @@ from ultralytics import YOLO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from annotator      import annotate_phase_image
-from config         import POSE_MODEL_PATH
+from config         import POSE_MODEL_PATH, BALL_MODEL_PATH
 from metrics        import get_raw_values
 from phase_detector import detect_swing_phases
 
@@ -45,17 +45,29 @@ def analyze_swing(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Load model (relative to project root, one level above golf_analyzer/) ---
-    model_path = Path(__file__).resolve().parent.parent / POSE_MODEL_PATH
+    root = Path(__file__).resolve().parent.parent
+
+    # --- Load pose model -------------------------------------------------------
+    model_path = root / POSE_MODEL_PATH
     if not model_path.exists():
         sys.exit(f"ERROR: pose model not found at {model_path}")
     print(f"Loading pose model: {model_path}")
     model = YOLO(str(model_path))
 
+    # --- Load ball model (optional — improves impact detection) ---------------
+    ball_model = None
+    ball_model_path = root / BALL_MODEL_PATH
+    if ball_model_path.exists():
+        print(f"Loading ball model: {ball_model_path}")
+        ball_model = YOLO(str(ball_model_path))
+    else:
+        print(f"Ball model not found at {ball_model_path} — using wrist-Y for impact")
+
     # --- Phase detection -------------------------------------------------------
     print(f"Detecting swing phases in: {video_path.name}")
     phase_frames = detect_swing_phases(
-        video_path, model, stride=stride, conf=conf, imgsz=_POSE_IMGSZ
+        video_path, model, stride=stride, conf=conf, imgsz=_POSE_IMGSZ,
+        ball_model=ball_model,
     )
     print("Detected frames:")
     for phase, frame_idx in phase_frames.items():

@@ -14,6 +14,7 @@ R_ANKLE    = 16
 # Model paths (relative to project root, i.e. one level above golf_analyzer/)
 # ---------------------------------------------------------------------------
 POSE_MODEL_PATH = "models/yolo26x-pose.pt"
+BALL_MODEL_PATH = "runs2/train/golf_ball_yolo26x_v2/weights/best.pt"
 
 # ---------------------------------------------------------------------------
 # Metric fault-score thresholds: (good_threshold, bad_threshold)
