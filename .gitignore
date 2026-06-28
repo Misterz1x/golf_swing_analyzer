@@ -113,7 +113,19 @@ dev/
 output/
 runs/
 runs2/
+runs_train/
 models/
 output_ball/
 output_ballv2/
 results/
+
+# model weights anywhere in the tree (use GitHub Releases instead)
+*.pt
+*.pth
+
+# generated debug images
+phase_debug.png
+golf_ball_yolo26x_v2.pt
+
+# thumbnail cache
+Thumbs.db

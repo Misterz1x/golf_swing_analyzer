@@ -14,7 +14,10 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config import L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_WRIST, R_WRIST
+from config import (
+    L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_WRIST, R_WRIST,
+    PHASE_METRIC_THRESHOLDS,
+)
 
 # ---------------------------------------------------------------------------
 # Colour palette (BGR)
@@ -103,7 +106,7 @@ def annotate_phase_image(
                   scale * 0.9, _C_TEXT, thickness=max(1, int(2 * scale)))
 
     # ---- 8. Raw values HUD (top-right) ---------------------------------------
-    _draw_hud(out, raw_values, scale)
+    _draw_hud(out, raw_values, scale, phase_name)
 
     return out
 
@@ -201,19 +204,28 @@ def _draw_hud(
     img:        np.ndarray,
     raw_values: dict[str, float] | None,
     scale:      float,
+    phase_name: str = "address",
 ) -> None:
-    """Draw a semi-transparent raw-values panel in the top-right corner."""
+    """Draw a semi-transparent panel in the top-right corner.
+
+    Each row shows:  Label   raw value   [zone bar with tick]
+
+    Zone bar thresholds are phase-specific (PHASE_METRIC_THRESHOLDS).
+    Bars where higher_is_better=True are drawn red-left / green-right.
+    """
     if not raw_values:
         return
 
     h, w = img.shape[:2]
 
-    margin  = max(8, int(10 * scale))
-    row_h   = max(18, int(22 * scale))
+    margin  = max(8,  int(10 * scale))
+    row_h   = max(22, int(26 * scale))
     label_w = int(180 * scale)
     val_w   = int(110 * scale)
-    title_h = int(26 * scale)
-    panel_w = label_w + val_w + 2 * margin
+    bar_w   = int(90  * scale)
+    bar_h   = max(5,  int(7  * scale))
+    title_h = int(26  * scale)
+    panel_w = label_w + val_w + bar_w + 3 * margin
     panel_h = len(raw_values) * row_h + title_h + 2 * margin
 
     x0 = w - panel_w - margin
@@ -238,27 +250,75 @@ def _draw_hud(
         "shoulder_hip_rotation_delta": "Sh/Hip Diff",
     }
 
+    # Zone bar colours (BGR)
+    _BAR_GREEN  = ( 60, 200,  60)
+    _BAR_YELLOW = (  0, 210, 230)
+    _BAR_RED    = ( 50,  50, 220)
+
+    phase_thresholds = PHASE_METRIC_THRESHOLDS.get(
+        phase_name, PHASE_METRIC_THRESHOLDS["address"]
+    )
+
     for i, (metric, val) in enumerate(raw_values.items()):
-        y    = y0 + title_h + margin + i * row_h
+        y      = y0 + title_h + margin + i * row_h
         text_y = y + row_h - max(4, int(5 * scale))
 
+        # ---- label ----
         cv2.putText(img, _LABELS.get(metric, metric),
                     (x0 + margin, text_y),
                     _FONT, scale * 0.42, _C_TEXT, 1, cv2.LINE_AA)
 
+        # ---- numeric value ----
         if metric == "hip_lateral_displacement":
             direction = "sway" if val >= 0 else "slide"
-            val_str = f"{abs(val):.3f} {direction}"
+            val_str  = f"{abs(val):.3f} {direction}"
+            bar_val  = abs(float(val))
         elif metric in ("spine_angle", "spine_delta",
                         "shoulder_plane_angle", "hip_plane_angle",
                         "shoulder_hip_rotation_delta"):
             val_str = f"{val:.1f} deg"
+            bar_val = float(val)
         else:
             val_str = f"{val:.3f}"
+            bar_val = float(val)
 
         cv2.putText(img, val_str,
                     (x0 + margin + label_w, text_y),
                     _FONT, scale * 0.42, (100, 220, 255), 1, cv2.LINE_AA)
+
+        # ---- zone bar ----
+        threshold_entry = phase_thresholds.get(metric)
+        if threshold_entry:
+            good, bad, higher_is_better = threshold_entry
+
+            lo          = min(good, bad)
+            hi          = max(good, bad)
+            display_max = hi * 1.4 or 1.0   # show a bit past the bad threshold
+
+            bx = x0 + margin + label_w + val_w
+            by = y + (row_h - bar_h) // 2
+
+            lo_px  = int(bar_w * lo / display_max)
+            mid_px = int(bar_w * ((lo + hi) / 2) / display_max)
+
+            if not higher_is_better:
+                # Low values good → green left, red right
+                cv2.rectangle(img, (bx,          by), (bx + lo_px,  by + bar_h), _BAR_GREEN,  -1)
+                cv2.rectangle(img, (bx + lo_px,  by), (bx + mid_px, by + bar_h), _BAR_YELLOW, -1)
+                cv2.rectangle(img, (bx + mid_px, by), (bx + bar_w,  by + bar_h), _BAR_RED,    -1)
+            else:
+                # High values good → red left, green right
+                cv2.rectangle(img, (bx,          by), (bx + lo_px,  by + bar_h), _BAR_RED,    -1)
+                cv2.rectangle(img, (bx + lo_px,  by), (bx + mid_px, by + bar_h), _BAR_YELLOW, -1)
+                cv2.rectangle(img, (bx + mid_px, by), (bx + bar_w,  by + bar_h), _BAR_GREEN,  -1)
+
+            # Border
+            cv2.rectangle(img, (bx, by), (bx + bar_w, by + bar_h), (90, 90, 90), 1)
+
+            # White tick at current value
+            tick_x = bx + int(bar_w * min(max(bar_val, 0.0), display_max) / display_max)
+            cv2.line(img, (tick_x, by - 2), (tick_x, by + bar_h + 2),
+                     (255, 255, 255), max(1, int(2 * scale)))
 
 
 def _text_with_bg(
