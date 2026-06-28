@@ -60,7 +60,7 @@ uv sync
 
 ## Models
 
-Both models must be placed in the `models/` folder at the project root. Download them from the [GitHub Releases page](../../releases).
+Both models must be placed in the `models/` folder at the project root. Download them from the [GitHub Releases page](https://github.com/Misterz1x/golf_swing_analyzer/releases/tag/v1.0).
 
 | File | Purpose | Size |
 |---|---|---|
