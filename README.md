@@ -265,7 +265,7 @@ Bourgain, M., Rouch, P., Rouillon, O., Thoreux, P., & Sauret, C. (2022). *Golf S
 
 ## Contributors
 
-Guido Bäumer
-Luis Marrufo 
-Vilian Knap 
+Guido Bäumer;
+Luis Marrufo; 
+Vilian Knap; 
 Elias Zischg
