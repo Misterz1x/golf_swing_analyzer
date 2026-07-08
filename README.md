@@ -38,11 +38,13 @@ Zone bar thresholds are phase-specific and informed by the biomechanics literatu
 
 A separate ball detection script runs the custom-trained YOLO model on a video and outputs an annotated video showing raw detections (red), geometry-filtered candidates (yellow), and temporally confirmed balls (green).
 
+A club segmentation script visualizes the club segmentation model output — drawing semi-transparent masks and bounding boxes for the shaft (cyan) and clubhead (orange) on every frame.
+
 ---
 
 ## Requirements
 
-- Python 3.11+
+- Python =3.12
 - NVIDIA GPU with CUDA (tested on RTX 5060)
 - [uv](https://docs.astral.sh/uv/) package manager
 
@@ -60,21 +62,25 @@ uv sync
 
 ## Models
 
-Both models must be placed in the `models/` folder at the project root. Download them from the [GitHub Releases page](https://github.com/Misterz1x/golf_swing_analyzer/releases/tag/v1.0).
+The pose model must be placed in `models/`. The two custom-trained models live in their training output folders (paths are already set in `golf_analyzer/config.py`). Download all weights from the [GitHub Releases page](https://github.com/Misterz1x/golf_swing_analyzer/releases/tag/v1.0).
 
 | File | Purpose | Size |
 |---|---|---|
 | `models/yolo26x-pose.pt` | YOLO pose model — detects 17-point body skeleton | ~120 MB |
-| `models/golf_ball_yolo26x_v2.pt` | Custom-trained golf ball detector (mAP@50 = 0.915) | ~113 MB |
+| `runs2/train/golf_ball_yolo26x_v2/weights/best.pt` | Custom-trained golf ball detector (mAP@50 = 0.915) | ~113 MB |
+| `runs_train/golf_club_seg_v1/weights/best.pt` | Custom-trained golf club segmentation (mAP@50 mask = 0.866) | ~404 MB |
 
 ```
 golf_swing_analyzer/
-└── models/
-    ├── yolo26x-pose.pt
-    └── golf_ball_yolo26x_v2.pt        ← rename best.pt to this after download
+├── models/
+│   └── yolo26x-pose.pt
+├── runs2/train/golf_ball_yolo26x_v2/weights/
+│   └── best.pt
+└── runs_train/golf_club_seg_v1/weights/
+    └── best.pt
 ```
 
-> The ball model is referenced in `golf_analyzer/config.py` as `BALL_MODEL_PATH`. If you rename the file differently, update that path.
+> Model paths are configured in `golf_analyzer/config.py` as `BALL_MODEL_PATH` and `CLUB_SEG_MODEL_PATH`.
 
 ---
 
@@ -130,6 +136,27 @@ Options:
 - **Yellow** — passed geometry but not yet temporally confirmed (single-frame candidate)
 - **Green** — confirmed ball (appeared in same location in ≥ 2 of the last 5 frames)
 
+### Club segmentation visualization
+
+Runs the club segmentation model on a video and saves an annotated output video with semi-transparent masks and bounding boxes for each detected class.
+
+```bash
+uv run python visualize_club_seg.py --video "sample_videos/IMG_5887.MOV"
+```
+
+Output is saved to `result_videos_images/videos_club_seg/IMG_5887_club_seg.mp4`.
+
+Options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--video` | *(all in sample_videos/)* | Path to a specific video |
+| `--conf` | `0.25` | Detection confidence threshold |
+
+**Overlay colours in the output video:**
+- **Cyan** — shaft (class 0): semi-transparent filled polygon + bounding box
+- **Orange** — clubhead (class 1): semi-transparent filled polygon + bounding box + centroid dot
+
 ---
 
 ## Sample videos
@@ -152,30 +179,39 @@ Videos are slow-motion or real-time depending on the device used.
 ```
 golf_swing_analyzer/
 ├── golf_analyzer/
-│   ├── analyze_swing.py       # Main pipeline and CLI
-│   ├── phase_detector.py      # Swing phase detection (address, top, impact, follow-through)
-│   ├── metrics.py             # Biomechanical metric computation
-│   ├── annotator.py           # Frame annotation and HUD rendering
-│   └── config.py              # Model paths, keypoint indices, phase-specific thresholds
-├── detect_golf_ball.py        # Standalone ball detection script
-├── gb_detection_improvement.py # Fine-tuning script for the ball detection model
-├── train_golf_ball.py         # Initial training script
-├── sample_videos/             # Four sample golf swing videos
+│   ├── analyze_swing.py        # Main pipeline and CLI
+│   ├── phase_detector.py       # Swing phase detection (address, top, impact, follow-through)
+│   ├── metrics.py              # Biomechanical metric computation
+│   ├── annotator.py            # Frame annotation and HUD rendering
+│   └── config.py               # Model paths, keypoint indices, phase-specific thresholds
+├── detect_golf_ball.py         # Standalone ball detection visualization script
+├── visualize_club_seg.py       # Standalone club segmentation visualization script
+├── train_golf_ball.py          # Ball detection model training script
+├── gb_detection_improvement.py # Ball detection model fine-tuning script
+├── train_golf_club_seg.py      # Club segmentation model training script
+├── sample_videos/              # Four sample golf swing videos
+├── result_videos_images/       # Output folder for annotated videos and images
 ├── docs/
-│   └── training/              # Ball detection model training metrics and plots
-├── golf_biomechanics.pdf      # Reference: Bourgain et al. 2022 systematic review
-├── PROJECT_NOTES.md           # Development notes and known issues
+│   └── training/               # Ball detection training metrics and plots
+├── runs_train/
+│   └── golf_club_seg_v1/       # Club segmentation training output and weights
+├── golf_biomechanics.pdf       # Reference: Bourgain et al. 2022 systematic review
+├── PROJECT_NOTES.md            # Development notes and known issues
 ├── pyproject.toml
 └── uv.lock
 ```
 
 ---
 
-## Ball detection model — training results
+## Training
 
-The custom ball detection model was fine-tuned from a YOLO base model on the [GolfBallDetector dataset](https://universe.roboflow.com/golf-ball-detector) for 80 epochs at 640 px resolution.
+### Ball detection model
 
-**Final metrics (epoch 80):**
+The ball detection model was trained in two runs on a combined dataset of ~2,600 images (GolfBallDetector dataset from Roboflow + custom frames), totalling approximately **7 hours** of GPU training.
+
+Run 1 trained for 50 epochs at 640 px resolution on the base dataset. Run 2 fine-tuned on an augmented set for a further 80 epochs, giving the final weights.
+
+**Best epoch metrics:**
 
 | Metric | Value |
 |---|---|
@@ -186,9 +222,30 @@ The custom ball detection model was fine-tuned from a YOLO base model on the [Go
 
 Training plots are in [`docs/training/`](docs/training/).
 
-![Training results](docs/training/results.png)
+![Ball detection training results](docs/training/results.png)
 
-![Validation predictions](docs/training/val_batch0_pred.jpg)
+![Ball detection validation predictions](docs/training/val_batch0_pred.jpg)
+
+---
+
+### Club segmentation model
+
+The club segmentation model was trained from scratch on a custom dataset of **11,500 images** with polygon masks for two classes — shaft and clubhead. Training ran for 190 epochs at 1920 px resolution and took approximately **48 hours** of GPU time.
+
+**Best epoch metrics (epoch 178):**
+
+| Metric | Box | Mask |
+|---|---|---|
+| mAP@50 | **0.932** | **0.866** |
+| mAP@50-95 | 0.675 | 0.466 |
+| Precision | 0.921 | 0.883 |
+| Recall | 0.882 | 0.828 |
+
+Training plots are in [`runs_train/golf_club_seg_v1/`](runs_train/golf_club_seg_v1/).
+
+![Club segmentation training results](runs_train/golf_club_seg_v1/results.png)
+
+![Club segmentation training batch](runs_train/golf_club_seg_v1/train_batch0.jpg)
 
 ---
 
@@ -205,3 +262,10 @@ Phase detection runs in three steps:
 ## Reference
 
 Bourgain, M., Rouch, P., Rouillon, O., Thoreux, P., & Sauret, C. (2022). *Golf Swing Biomechanics: A Systematic Review and Methodological Recommendations for Kinematics.* Sports, 10(6), 91. https://doi.org/10.3390/sports10060091
+
+## Contributors
+
+Guido Bäumer
+Luis Marrufo 
+Vilian Knap 
+Elias Zischg

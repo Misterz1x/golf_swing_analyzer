@@ -53,6 +53,7 @@ def detect_swing_phases(
     debug:       bool  = False,
     ball_model         = None,
     ball_conf:   float = 0.25,
+    club_model         = None,
 ) -> dict[str, int]:
     """
     Detect the four key golf swing phase frames in a video.
@@ -84,6 +85,7 @@ def detect_swing_phases(
     wrist_y_raw:    list[float]                      = []
     kpts_seq:       list[np.ndarray]                 = []
     ball_xy:        list[tuple[float, float] | None] = []
+    clubhead_xy:    list[tuple[float, float] | None] = []
 
     frame_idx = 0
     while True:
@@ -97,6 +99,8 @@ def detect_swing_phases(
             kpts_seq.append(kp)
             if ball_model is not None:
                 ball_xy.append(_detect_ball_xy(frame, ball_model, ball_conf, imgsz))
+            if club_model is not None:
+                clubhead_xy.append(_detect_clubhead_xy(frame, club_model))
         frame_idx += 1
     cap.release()
 
@@ -174,38 +178,46 @@ def detect_swing_phases(
 
     _blend = impact   # record blend for debug; used as fallback
 
-    # --- Primary: wrist directly over ball rest X --------------------------------
-    # Most accurate when ball is detected: the first frame where wrist X crosses
-    # ball_rest_x is physically the contact moment, adapting to each golfer's
-    # ball placement (e.g. forward in the stance for a driver).
-    _wb = (_find_impact_wrist_over_ball(kpts_seq, ball_xy, top_bs, impact_cap)
-           if (ball_model is not None and ball_xy) else None)
+    if club_model is not None and clubhead_xy:
+        # Club seg model loaded — use clubhead position only.
+        # No wrist fallbacks so results are unambiguously from the club model.
+        #
+        # Only pass address_ch_xy when the address frame was detected reliably.
+        # addr=0 (or very early) means the address detector defaulted to the
+        # first video frame, giving a meaningless clubhead reference that will
+        # corrupt the velocity-threshold calculation.
+        addr_min   = max(2, int(top_bs * 0.05))
+        addr_valid = address >= addr_min
+        if not addr_valid:
+            print(f"  [clubhead] addr={address} < {addr_min} — address ref skipped")
+        address_ch_xy = (clubhead_xy[address]
+                         if addr_valid and address < len(clubhead_xy) else None)
+        _ch = _find_impact_from_clubhead(clubhead_xy, ball_xy, top_bs, impact_cap,
+                                         address_ch_xy=address_ch_xy)
+        if _ch is not None:
+            impact = _ch
+        _wb, _w, _h = None, None, None
+    else:
+        # No club model — fall back to wrist-based chain.
+        _ch = None
+        _wb = (_find_impact_wrist_over_ball(kpts_seq, ball_xy, top_bs, impact_cap)
+               if (ball_model is not None and ball_xy) else None)
+        _w_raw = _refine_impact_wrist_x(kpts_seq, _blend, top_bs, impact_cap, address)
+        _w = _w_raw if _w_raw != _blend else None
+        if _wb is not None:
+            impact = _wb
+        elif _w is not None:
+            impact = _w
 
-    # --- Secondary: wrist over address X (proxy when ball is not detected) ------
-    # address X is the best available proxy for ball X when ball detection fails.
-    # Called with _blend as fallback so _w == _blend signals "no crossing found".
-    _w_raw = _refine_impact_wrist_x(kpts_seq, _blend, top_bs, impact_cap, address)
-    _w = _w_raw if _w_raw != _blend else None   # None → no crossing found
-
-    # Priority: wrist_over_ball beats wrist_over_address beats blend.
-    if _wb is not None:
-        impact = _wb
-    elif _w is not None:
-        impact = _w
-    # else: impact = _blend already set above
-
-    _baseline = impact
-
-    # --- Head rotation: hard upper-bound cap -------------------------------------
-    # Head starts rotating only after impact — cap the estimate there.
-    _h = _refine_impact_head_stability(kpts_seq, impact, top_bs, impact_cap)
-    if _h < impact:
-        impact = _h
+        # Head rotation cap — only used when no club model is loaded.
+        _h = _refine_impact_head_stability(kpts_seq, impact, top_bs, impact_cap)
+        if _h < impact:
+            impact = _h
 
     impact = min(max(impact, _min_impact), impact_cap)
 
-    print(f"  [impact_debug] blend={_blend}  wrist_over_ball={_wb}  wrist_x={_w}"
-          f"  head={_h}  min_floor={_min_impact}  final={impact}")
+    print(f"  [impact_debug] blend={_blend}  clubhead={_ch}  wrist_over_ball={_wb}"
+          f"  wrist_x={_w}  head={_h}  min_floor={_min_impact}  final={impact}")
 
     # ---- Follow-through -------------------------------------------------------
     # At the finish the wrists have swung to the left side and risen back up
@@ -324,7 +336,8 @@ def _detect_ball_xy(
     """
     Run ball detection on one frame.
     Returns (cx, cy) of the most confident valid detection, or None.
-    Boxes that are too large or non-round are rejected as false positives.
+    Rejects boxes that are too large, non-round, or in the top 25% of the frame
+    (same filters as detect_golf_ball.py to avoid sky/hat false positives).
     """
     results = model(frame, imgsz=imgsz, verbose=False, conf=conf)
     boxes = results[0].boxes
@@ -333,19 +346,23 @@ def _detect_ball_xy(
 
     h, w = frame.shape[:2]
     frame_area = float(h * w)
+    y_min = h * 0.25   # reject anything in the top 25% of the frame
 
     best_conf, best_xy = -1.0, None
     for box, c in zip(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy()):
         x1, y1, x2, y2 = box
         bw, bh = x2 - x1, y2 - y1
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
         if bw * bh > 0.04 * frame_area:
             continue
         aspect = bw / max(bh, 1e-6)
         if not (0.4 < aspect < 2.5):
             continue
+        if cy < y_min:
+            continue
         if float(c) > best_conf:
             best_conf = float(c)
-            best_xy = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+            best_xy = (cx, cy)
 
     return best_xy
 
@@ -638,6 +655,187 @@ def _refine_impact_head_stability(
     if top_bs + 1 <= candidate <= impact_cap:
         return candidate
     return impact
+
+
+def _detect_clubhead_xy(
+    frame: np.ndarray,
+    model,
+    imgsz: int = 640,
+    conf:  float = 0.3,
+) -> tuple[float, float] | None:
+    """
+    Run club segmentation model on one frame.
+    Returns (cx, cy) of the most confident clubhead (class 1) detection, or None.
+    """
+    results = model(frame, imgsz=imgsz, verbose=False, conf=conf)
+    boxes = results[0].boxes
+    if boxes is None or len(boxes) == 0:
+        return None
+
+    best_conf, best_xy = -1.0, None
+    for i in range(len(boxes)):
+        if int(boxes.cls[i].cpu()) != 1:   # class 1 = clubhead
+            continue
+        c = float(boxes.conf[i].cpu())
+        if c > best_conf:
+            best_conf = c
+            x1, y1, x2, y2 = boxes.xyxy[i].cpu().numpy()
+            best_xy = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+
+    return best_xy
+
+
+def _find_impact_from_clubhead(
+    clubhead_xy:   list[tuple[float, float] | None],
+    ball_xy:       list[tuple[float, float] | None],
+    top_bs:        int,
+    impact_cap:    int,
+    address_ch_xy: tuple[float, float] | None = None,
+) -> int | None:
+    """
+    Find the impact sample index using clubhead position.
+
+    Primary: minimum distance to address clubhead position — at address the
+    club rests at the ball, so the downswing frame where the clubhead returns
+    to that same position is impact.
+
+    Fallback 1: X inflection point (horizontal motion reversal).
+    Fallback 2: minimum distance to ball rest position.
+    Last resort: maximum clubhead Y (lowest physical point).
+
+    Returns None if fewer than 3 clubhead detections exist in the search window.
+    """
+    search = [(i, clubhead_xy[i])
+              for i in range(top_bs + 1, min(len(clubhead_xy), impact_cap + 1))
+              if clubhead_xy[i] is not None]
+
+    total_in_window = impact_cap - top_bs
+    print(f"  [clubhead] detections in downswing window: {len(search)}/{total_in_window}"
+          f"  (samples {top_bs+1}–{impact_cap})")
+
+    if len(search) < 3:
+        print(f"  [clubhead] too few detections — returning None")
+        return None
+
+    # --- Get ball rest position ------------------------------------------------
+    ball_rest_x, ball_rest_y = None, None
+    if ball_xy:
+        rest_start = max(0, top_bs - 10)
+        rest_end   = min(len(ball_xy) - 1, top_bs + 10)
+        window_det = [xy for xy in ball_xy[rest_start : rest_end + 1] if xy is not None]
+        if len(window_det) >= 3:
+            ball_rest_x = float(np.median([xy[0] for xy in window_det]))
+            ball_rest_y = float(np.median([xy[1] for xy in window_det]))
+            print(f"  [clubhead] ball rest pos: ({ball_rest_x:.0f}, {ball_rest_y:.0f})")
+
+    # --- Derive address reference from pre-swing detections if not provided ----
+    # When the caller couldn't supply a valid address frame (e.g. addr=0 was
+    # skipped), compute it here: find the most spatially stable window of
+    # clubhead detections before top_bs — that is the address/setup phase
+    # where the club rests near the ball and is not yet moving.
+    if address_ch_xy is None and top_bs > 5:
+        pre = [
+            (i, clubhead_xy[i])
+            for i in range(0, min(top_bs, len(clubhead_xy)))
+            if clubhead_xy[i] is not None
+        ]
+        if len(pre) >= 5:
+            win = min(10, max(3, len(pre) // 3))
+            best_var, best_coords = float("inf"), None
+            for k in range(len(pre) - win + 1):
+                chunk = pre[k : k + win]
+                xs = [ch[0] for _, ch in chunk]
+                ys = [ch[1] for _, ch in chunk]
+                v = float(np.var(xs) + np.var(ys))
+                if v < best_var:
+                    best_var   = v
+                    best_coords = (float(np.median(xs)), float(np.median(ys)))
+            if best_coords is not None:
+                address_ch_xy = best_coords
+                print(f"  [clubhead] derived address from pre-swing"
+                      f" (var={best_var:.0f}): ({address_ch_xy[0]:.0f}, {address_ch_xy[1]:.0f})")
+
+    # --- Primary: address clubhead position reference --------------------------
+    # Two cases depending on what the model detected at address:
+    #
+    # Grip-level (ref Y well above ball): model saw the grip/shaft.
+    #   Global minimum distance during the downswing = when the grip passes
+    #   through that same height = body-position impact frame. ✓
+    #
+    # Tip-level (ref Y ≈ ball level): model saw the actual clubhead tip.
+    #   Global minimum = physical contact (tip back at ball level) which fires
+    #   slightly too late for body-position analysis.
+    #   Instead: find the first interval where approach speed exceeds 50 % of
+    #   its maximum — the onset of rapid approach = body-position impact.
+    if address_ch_xy is not None:
+        ref_x, ref_y = address_ch_xy
+        print(f"  [clubhead] address ref: ({ref_x:.0f}, {ref_y:.0f})")
+
+        max_ch_y  = max(ch[1] for _, ch in search)
+        # tip_level = True only when the address detection is *close* to ball
+        # height (model saw the actual tip near the ball). If ref_y is very
+        # different from ball_y the model saw the grip/shaft → grip-level path.
+        if ball_rest_y is not None:
+            tip_level = 0.75 * ball_rest_y < ref_y < 1.25 * ball_rest_y
+        else:
+            tip_level = ref_y > max_ch_y * 0.85
+
+        s_dists = [(i, ch, np.hypot(ch[0] - ref_x, ch[1] - ref_y)) for i, ch in search]
+
+        if not tip_level:
+            # Grip-level: global minimum distance
+            best_i, best_dist = min(((i, d) for i, _, d in s_dists), key=lambda x: x[1])
+            print(f"  [clubhead] grip-level min-dist → sample={best_i}  dist={best_dist:.0f}px")
+            return best_i
+
+        # Tip-level: approach-velocity threshold
+        dists_seq = [d for _, _, d in s_dists]
+        vels = [dists_seq[k] - dists_seq[k + 1] for k in range(len(dists_seq) - 1)]
+        if vels:
+            max_vel  = max(vels)
+            half_max = 0.5 * max_vel
+            for k, v in enumerate(vels):
+                if v >= half_max:
+                    best_i = search[k + 1][0]
+                    print(f"  [clubhead] tip-level vel-threshold → sample={best_i}"
+                          f"  vel={v:.0f}px/step  (max={max_vel:.0f})")
+                    return best_i
+        # Velocity threshold didn't fire — fall back to global minimum
+        best_i = min(((i, d) for i, _, d in s_dists), key=lambda x: x[1])[0]
+        print(f"  [clubhead] tip-level fallback min-dist → sample={best_i}")
+        return best_i
+
+    # --- Fallback 1: minimum distance to ball rest position --------------------
+    # When ball position is known it is the most direct reference: the club
+    # passes through the ball at impact, so the detection closest to ball_rest
+    # is the impact frame. Spurious detections (wrong X/Y) are far from ball
+    # and will lose to the real near-ball detection.
+    if ball_rest_x is not None and ball_rest_y is not None:
+        best_i, min_dist = None, float("inf")
+        for i, ch in search:
+            d = np.hypot(ch[0] - ball_rest_x, ch[1] - ball_rest_y)
+            if d < min_dist:
+                min_dist, best_i = d, i
+        print(f"  [clubhead] ball-dist fallback → sample={best_i}  dist={min_dist:.0f}px")
+        return best_i
+
+    # --- Fallback 2: Y-descent threshold (no ball position) -------------------
+    # First half of the window only for max_ch_y so follow-through detections
+    # don't inflate the reference.
+    win50    = top_bs + max(5, int((impact_cap - top_bs) * 0.50))
+    ref      = [(i, ch) for i, ch in search if i <= win50] or search
+    max_ch_y = max(ch[1] for _, ch in ref)
+    y_thr    = 0.70 * max_ch_y
+    for i, ch in search:
+        if ch[1] > y_thr:
+            print(f"  [clubhead] Y-descent fallback → sample={i}"
+                  f"  ch_y={ch[1]:.0f}  (threshold={y_thr:.0f}  max={max_ch_y:.0f})")
+            return i
+
+    # --- Last fallback: maximum clubhead Y (lowest physical point = impact) ----
+    best = max(search, key=lambda x: x[1][1])
+    print(f"  [clubhead] max-Y fallback → sample={best[0]}  ch_y={best[1][1]:.0f}")
+    return best[0]
 
 
 def _interpolate_nans(arr: np.ndarray) -> np.ndarray:

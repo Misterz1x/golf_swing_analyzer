@@ -18,7 +18,7 @@ from ultralytics import YOLO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from annotator      import annotate_phase_image
-from config         import POSE_MODEL_PATH, BALL_MODEL_PATH
+from config         import POSE_MODEL_PATH, BALL_MODEL_PATH, CLUB_SEG_MODEL_PATH
 from metrics        import get_raw_values
 from phase_detector import detect_swing_phases
 
@@ -30,10 +30,11 @@ _POSE_IMGSZ = 1280
 
 
 def analyze_swing(
-    video_path: str | Path,
-    output_dir: str | Path,
-    stride:     int   = 3,
-    conf:       float = 0.3,
+    video_path:    str | Path,
+    output_dir:    str | Path,
+    stride:        int   = 3,
+    conf:          float = 0.3,
+    impact_offset: int   = 0,
 ) -> dict[str, dict[str, float]]:
     """
     Full pipeline: detect phases → extract keypoints → compute metrics
@@ -61,14 +62,27 @@ def analyze_swing(
         print(f"Loading ball model: {ball_model_path}")
         ball_model = YOLO(str(ball_model_path))
     else:
-        print(f"Ball model not found at {ball_model_path} — using wrist-Y for impact")
+        print(f"Ball model not found at {ball_model_path} — skipping ball-based impact")
+
+    # --- Load club segmentation model (optional — primary impact detection) ---
+    club_model = None
+    club_model_path = root / CLUB_SEG_MODEL_PATH
+    if club_model_path.exists():
+        print(f"Loading club seg model: {club_model_path}")
+        club_model = YOLO(str(club_model_path))
+    else:
+        print(f"Club seg model not found at {club_model_path} — skipping clubhead impact")
 
     # --- Phase detection -------------------------------------------------------
     print(f"Detecting swing phases in: {video_path.name}")
     phase_frames = detect_swing_phases(
         video_path, model, stride=stride, conf=conf, imgsz=_POSE_IMGSZ,
-        ball_model=ball_model,
+        ball_model=ball_model, club_model=club_model,
     )
+    if impact_offset != 0 and "impact" in phase_frames:
+        phase_frames["impact"] += impact_offset
+        print(f"  [impact offset applied: {impact_offset:+d} frames]")
+
     print("Detected frames:")
     for phase, frame_idx in phase_frames.items():
         print(f"  {phase:<20} frame {frame_idx:>5}")
@@ -205,9 +219,12 @@ def main() -> None:
     parser.add_argument("--output", default="./results", help="Output directory (default: ./results)")
     parser.add_argument("--stride", type=int,   default=3,   help="Frame sampling stride (default 3)")
     parser.add_argument("--conf",   type=float, default=0.3, help="Pose detection confidence (default 0.3)")
+    parser.add_argument("--impact-offset", type=int, default=0,
+                        help="Shift impact frame by N video frames (+ = later, - = earlier)")
     args = parser.parse_args()
 
-    analyze_swing(args.video, args.output, stride=args.stride, conf=args.conf)
+    analyze_swing(args.video, args.output, stride=args.stride, conf=args.conf,
+                  impact_offset=args.impact_offset)
 
 
 if __name__ == "__main__":

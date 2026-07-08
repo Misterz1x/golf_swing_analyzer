@@ -13,8 +13,9 @@ R_ANKLE    = 16
 # ---------------------------------------------------------------------------
 # Model paths (relative to project root, i.e. one level above golf_analyzer/)
 # ---------------------------------------------------------------------------
-POSE_MODEL_PATH = "models/yolo26x-pose.pt"
-BALL_MODEL_PATH = "runs2/train/golf_ball_yolo26x_v2/weights/best.pt"
+POSE_MODEL_PATH     = "models/yolo26x-pose.pt"
+BALL_MODEL_PATH     = "runs2/train/golf_ball_yolo26x_v2/weights/best.pt"
+CLUB_SEG_MODEL_PATH = "runs_train/golf_club_seg_v1/weights/best.pt"
 
 # ---------------------------------------------------------------------------
 # Phase-specific metric thresholds used by the HUD zone bar.
