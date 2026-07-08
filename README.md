@@ -62,13 +62,13 @@ uv sync
 
 ## Models
 
-The pose model must be placed in `models/`. The two custom-trained models live in their training output folders (paths are already set in `golf_analyzer/config.py`). Download all weights from the [GitHub Releases page](https://github.com/Misterz1x/golf_swing_analyzer/releases/tag/v1.0).
+The pose model must be placed in `models/`. The two custom-trained models live in their training output folders (paths are already set in `golf_analyzer/config.py`).
 
-| File | Purpose | Size |
-|---|---|---|
-| `models/yolo26x-pose.pt` | YOLO pose model — detects 17-point body skeleton | ~120 MB |
-| `runs2/train/golf_ball_yolo26x_v2/weights/best.pt` | Custom-trained golf ball detector (mAP@50 = 0.915) | ~113 MB |
-| `runs_train/golf_club_seg_v1/weights/best.pt` | Custom-trained golf club segmentation (mAP@50 mask = 0.866) | ~404 MB |
+| File | Purpose | Size | Release |
+|---|---|---|---|
+| `models/yolo26x-pose.pt` | YOLO pose model — detects 17-point body skeleton | ~120 MB | [v1.0](https://github.com/Misterz1x/golf_swing_analyzer/releases/tag/v1.0) |
+| `runs2/train/golf_ball_yolo26x_v2/weights/best.pt` | Custom-trained golf ball detector (mAP@50 = 0.915) | ~113 MB | [v1.0](https://github.com/Misterz1x/golf_swing_analyzer/releases/tag/v1.0) |
+| `runs_train/golf_club_seg_v1/weights/best.pt` | Custom-trained golf club segmentation (mAP@50 mask = 0.866) | ~404 MB | [v1.1](https://github.com/Misterz1x/golf_swing_analyzer/releases#release-v1.1) |
 
 ```
 golf_swing_analyzer/
@@ -192,9 +192,8 @@ golf_swing_analyzer/
 ├── sample_videos/              # Four sample golf swing videos
 ├── result_videos_images/       # Output folder for annotated videos and images
 ├── docs/
-│   └── training/               # Ball detection training metrics and plots
-├── runs_train/
-│   └── golf_club_seg_v1/       # Club segmentation training output and weights
+│   ├── training_ball_detection/ # Ball detection training metrics and plots
+│   └── training_club_seg/       # Club segmentation training metrics and plots
 ├── golf_biomechanics.pdf       # Reference: Bourgain et al. 2022 systematic review
 ├── PROJECT_NOTES.md            # Development notes and known issues
 ├── pyproject.toml
