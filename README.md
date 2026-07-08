@@ -220,11 +220,11 @@ Run 1 trained for 50 epochs at 640 px resolution on the base dataset. Run 2 fine
 | Precision | 0.953 |
 | Recall | 0.842 |
 
-Training plots are in [`docs/training/`](docs/training/).
+Training plots are in [`docs/training_ball_detection/`](docs/training_ball_detection/).
 
-![Ball detection training results](docs/training/results.png)
+![Ball detection training results](docs/training_ball_detection/results.png)
 
-![Ball detection validation predictions](docs/training/val_batch0_pred.jpg)
+![Ball detection validation predictions](docs/training_ball_detection/val_batch0_pred.jpg)
 
 ---
 
@@ -241,11 +241,11 @@ The club segmentation model was trained from scratch on a custom dataset of **11
 | Precision | 0.921 | 0.883 |
 | Recall | 0.882 | 0.828 |
 
-Training plots are in [`runs_train/golf_club_seg_v1/`](runs_train/golf_club_seg_v1/).
+Training plots are in [`docs/training_club_seg/`](docs/training_club_seg/).
 
-![Club segmentation training results](runs_train/golf_club_seg_v1/results.png)
+![Club segmentation training results](docs/training_club_seg/results.png)
 
-![Club segmentation training batch](runs_train/golf_club_seg_v1/train_batch0.jpg)
+![Club segmentation training batch](docs/training_club_seg/train_batch0.jpg)
 
 ---
 
