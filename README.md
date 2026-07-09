@@ -250,11 +250,41 @@ Training plots are in [`docs/training_club_seg/`](docs/training_club_seg/).
 
 ## Phase detection approach
 
-Phase detection runs in three steps:
+Phase detection runs in four steps:
 
 1. **Pose estimation** — YOLO pose model extracts 17-point skeleton on every N-th frame (default stride = 3).
 2. **Wrist-Y signal** — the vertical wrist trajectory is smoothed (Savitzky-Golay) and peak-detected to locate address and top of backswing.
-3. **Impact refinement** — a priority chain refines impact: wrist-over-ball X crossing (using the ball rest position detected near top of backswing) → wrist-X proxy → velocity-inflection blend fallback.
+3. **Ball detection** — the custom ball detection model locates the ball's rest position near the top of backswing, providing a spatial anchor for impact detection.
+4. **Impact detection** — when the club segmentation model is loaded it is the sole determinant of impact. The clubhead position at address is recorded, and the downswing frame where the clubhead returns to that same position is selected as impact. If the address detection is at ball level (tip-level), a velocity-threshold approach is used instead of minimum distance to avoid firing too late. When no club model is loaded, the pipeline falls back to a wrist-over-ball X crossing → wrist-X proxy → velocity-inflection blend chain.
+
+---
+
+## Discussion of results and approaches
+
+### What works well
+
+The pose-based metrics (spine angle, shoulder tilt, hip tilt, X-factor) are reliable across all tested videos. The YOLO pose model performs well on face-on golf swing footage and the Savitzky-Golay smoothing removes enough noise to make the wrist-Y peak detection stable for address and top-of-backswing in nearly all cases.
+
+The ball detection model reaches mAP@50 = 0.915 and combined with the geometry and temporal consistency filters, is a very good approach in practice. Still there are some false positives that can accure. But the ball rest position the model provides is a stable spatial reference throughout the pipeline.
+
+The club segmentation model (mAP@50 mask = 0.866) successfully identifies the shaft and clubhead in the vast majority of frames. Using the clubhead's address position as a reference for impact, rather than relying purely on pose data, is a more direct measurement and improved impact accuracy noticeably across the tested videos.
+
+### What did not work / limitations
+
+**Impact detection remains the hardest problem.** Pure wrist-based approaches (wrist X crossing, wrist-Y velocity) are indirect proxies and consistently fired either too early or too late depending on the video. The head-rotation cap and multiple fallback signals added complexity without reliably solving the timing issue. This inconsistency is the reason the golf club segmentation model was added, to give a more reliable detection method that isn't based on the players level. The data showed that without the segmentation model more seasoned players with cleaner technique were favored for better impact detection, as the body movement is more consistent and way more predictable form swing to swing. 
+
+**Address frame detection can fail.** If the address detection algorithm returns frame 0 (e.g. when the video starts at setup or when top-of-backswing is detected too early), the clubhead reference is skipped and the pipeline falls back to less accurate methods. The current workaround, which is deriving the address reference from the most spatially stable pre-swing window in the clubhead trajectory, helps but is sensitive to the quality of detections in the early frames.
+
+**The club segmentation model occasionally detects the shaft or grip instead of the clubhead tip**, shifting the tracked centroid away from the actual impact point. This inconsistency means the address-reference approach sometimes compares grip-level coordinates at address to tip-level coordinates at impact, or vice versa, reducing accuracy. This could potentially be a problem if a player uses softer shafts, as there is even more bending of the club before the contact, resulting in less accurate detections. The images used for training were mostly images of players with golf clubs in hand, but not mid swing. 
+
+**Training data coverage.** The club segmentation model was trained on a single camera angle (face-on). Performance on behind-the-ball or down-the-line footage would likely be significantly lower.
+
+### Potential improvements
+
+- **Better address detection** — a dedicated model or rule to reliably identify the setup frame would make the clubhead-reference approach more robust.
+- **Per-frame class consistency** — post-processing the segmentation output to enforce temporal smoothness (e.g. Kalman filter on the centroid) would reduce the grip/tip switching problem.
+- **Multi-angle support** — training the segmentation model on down-the-line footage would enable 3D-aware analysis and more accurate swing-plane metrics.
+- **End-to-end impact model** — rather than a hand-crafted detection chain, a small temporal model trained directly to predict the impact frame from the clubhead trajectory could be more accurate and easier to tune.
 
 ---
 
@@ -264,7 +294,7 @@ Bourgain, M., Rouch, P., Rouillon, O., Thoreux, P., & Sauret, C. (2022). *Golf S
 
 ## Contributors
 
-Guido Bäumer;
-Luis Marrufo; 
-Vilian Knap; 
+Guido Bäumer <br />
+Luis Marrufo <br />
+Vilian Knap <br /> 
 Elias Zischg
