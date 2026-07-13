@@ -288,7 +288,18 @@ The club segmentation model (mAP@50 mask = 0.866) successfully identifies the sh
 
 ---
 
-## Reference
+## References and credits
+
+**Project inspiration**
+
+McNally, W. (2019). GolfDB — A Video Database for Golf Swing Sequencing. GitHub. https://github.com/wmcnally/golfdb
+
+**Training datasets**
+
+- Golf club segmentation labels: [Golf Club Tracking](https://universe.roboflow.com/club-head-tracking/golf-club-tracking) (Roboflow)
+- Golf ball detection labels: [GolfBallDetector](https://universe.roboflow.com/mrinmoy-bhadra-lojma/golfballdetector) (Roboflow)
+
+**Biomechanics literature**
 
 Bourgain, M., Rouch, P., Rouillon, O., Thoreux, P., & Sauret, C. (2022). *Golf Swing Biomechanics: A Systematic Review and Methodological Recommendations for Kinematics.* Sports, 10(6), 91. https://doi.org/10.3390/sports10060091
 
